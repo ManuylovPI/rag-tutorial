@@ -72,7 +72,7 @@ RAG_BACKEND=tfidf     uv run streamlit run app/main.py   # лексически�
 | 1 | `rude bartender and watered down drinks` | ответ, категория «Бары», score > 0 |
 | 2 | `delicious food and great service` | ответ, релевантные ресторанные отзывы |
 | 3 | `honest mechanic fast oil change` | ответ, категория «Авто», высокий score |
-| **N (negative)** | `how do I configure a wifi router` | **отказ** (темы нет в отзывах) |
+| **N (negative)** | `quantum entanglement in particle physics` | **отказ** (темы нет в отзывах) |
 
 Запустить демо из консоли:
 
