@@ -11,7 +11,7 @@
 ## Комментарий
 
 Реализован учебный RAG поверх отзывов **Yelp** (`Yelp/yelp_review_full`,
-срез 5000 отзывов → 6316 чанков).
+срез 5000 отзывов → 14975 чанков).
 
 Полный pipeline: `prepare_datasets → ingest → chunking → index → retrieval →
 demo-answer → Streamlit UI`. Ответ строится только из найденных фрагментов с
