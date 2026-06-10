@@ -1,214 +1,238 @@
-"""Выборка из rows.csv и сохранение data/raw/datasets.json (только name, text, на русском)."""
-
-import csv
+import argparse
 import json
+import random
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ROWS_CSV = ROOT / "data" / "raw" / "rows.csv"
-OUT_JSON = ROOT / "data" / "raw" / "datasets.json"
+sys.path.insert(0, str(ROOT))
 
-TARGET_PRODUCTS = [
-    "Debt collection",
-    "Student loan",
-    "Mortgage",
-    "Credit card or prepaid card",
-    "Checking or savings account",
-    "Money transfer, virtual currency, or money service",
-    "Payday loan, title loan, or personal loan",
-    "Credit card",
-    "Bank account or service",
-]
-MIN_NARRATIVE_LEN = 200
+from app.config import RAW_DATASETS
 
-# Русские тексты для отобранных жалоб (Complaint ID → name, text)
-TRANSLATIONS: dict[str, dict[str, str]] = {
-    "3182593": {
-        "name": "Взыскание долга — попытки взыскать несуществующий долг (Ability Recovery Services)",
-        "text": (
-            "Продукт: взыскание долга. Проблема: попытки взыскать долг, который не должен быть оплачен. "
-            "Подпроблема: долг уже был погашен. Компания: Ability Recovery Services, LLC. Штат: Джорджия.\n\n"
-            "Текст жалобы потребителя:\n"
-            "Начиная с XX/XX/XXXX, я стала получать звонки от коллекторского агентства Ability Recovery "
-            "Solutions по поводу медицинского счёта, который, по их словам, не был оплачен. Я объяснила, "
-            "что с XX/XX/XXXX одобрена на SSI и Medicaid; Medicaid задним числом действует с XX/XX/XXXX. "
-            "Мне посоветовали обратиться в больницы, чтобы они отозвали счета из коллекторов и подали их "
-            "в Medicaid. Больница подтвердила, что счета отозваны, оплачены и закрыты. Тем не менее звонки "
-            "продолжились: когда я говорила, что долг погашен, операторы грубили и требовали доказательства. "
-            "При попытках обсудить ситуацию они угрожали по телефону. Больница заявила, что взыскание "
-            "неправомерно и пыталась связаться с коллекторами, но те отказались убрать запись из кредитной "
-            "истории, продолжали звонить по несколько раз в день, угрожали судом и испортили мой кредитный "
-            "рейтинг. По запросу они так и не прислали документов, подтверждающих долг."
-        ),
-    },
-    "3182176": {
-        "name": "Студенческий кредит — трудности с погашением (NRA Group)",
-        "text": (
-            "Продукт: студенческий кредит. Проблема: трудности с погашением займа. "
-            "Подпроблема: нет гибких вариантов погашения. Компания: NRA Group, LLC. Штат: Невада.\n\n"
-            "Текст жалобы потребителя:\n"
-            "Я выполняла требования программы «ability to benefit» в точности по закону. "
-            "Они намеренно исказили результаты проверки, чтобы продолжать удерживать деньги из моей зарплаты. "
-            "Я как раз тот человек, для которого эта программа предназначена, но закон проигнорировали "
-            "и продолжают разорять меня финансово. Нужна проверка Министерства образования и коллекторского "
-            "агентства, которое они используют. Если рассмотрите моё дело, увидите, что я соответствовала "
-            "требованиям. Прошу проверить мою жалобу и действия тех, кто мошенничеством отказал в "
-            "удовлетворении заявки."
-        ),
-    },
-    "3179888": {
-        "name": "Ипотека — закрытие ипотечной сделки (Citibank)",
-        "text": (
-            "Продукт: ипотека. Проблема: закрытие ипотечной сделки. "
-            "Компания: CITIBANK, N.A. Штат: Невада.\n\n"
-            "Текст жалобы потребителя:\n"
-            "Мне устно обещали списать пункты (points), чтобы получить заявленную ставку от команды "
-            "ипотечных агентов Citibank. За неделю до закрытия сделки сказали, что скидки уже применены "
-            "и осталось два варианта: 1) платить более высокий процент или 2) использовать пункты для "
-            "снижения ставки до первоначальной котировки (лок на 60 дней). Я выбрала второй вариант "
-            "и заплатила около {$1500.00}, чтобы зафиксировать низкую ставку, хотя агент обещал, "
-            "что пункты спишут. Кредит с тех пор передан другому кредитору (XXXX)."
-        ),
-    },
-    "3180097": {
-        "name": "Кредитная или предоплаченная карта — комиссии и проценты (AAFES)",
-        "text": (
-            "Продукт: кредитная или предоплаченная карта. Проблема: комиссии или проценты. "
-            "Подпроблема: проблема с комиссиями. Компания: Army and Air Force Exchange Service. "
-            "Штат: Техас.\n\nТекст жалобы потребителя:\n"
-            "Речь о кредитном счёте XXXX XXXX XXXX, которым управляет Army and Air Force Exchange Service "
-            "(AAFES). После 21 года службы я вышел в отставку, не нашёл работу и отстал от платежей "
-            "в XXXX году. AAFES начала удерживать долг из моей военной пенсии. Удержания были в XXXX "
-            "и XXXX, затем прекратились. В XX/XX/XXXX пришло письмо о возобновлении удержаний; указана "
-            "сумма задолженности {$11000.00}. Я переписывался с AAFES: долг, по моим данным, погашен, "
-            "но удержания из пенсии и налоговых возвратов продолжались. Меня направили к коллектору XXXX, "
-            "но письменно не уведомили о привлечении агентства. Неясно, какую роль играет XXXX, если "
-            "удержания идут через AAFES. Ответ на запрос к XXXX получил только после двух обращений "
-            "(более 30 дней). В XX/XX/XXXX отправил письмо XXXX с копией AAFES: приложил документы "
-            "пенсионного агента и выписки, показав, что долг погашен с переплатой. Просил прекратить "
-            "удержания, вернуть переплату и подтвердить полномочия XXXX. Ответа в течение 30 рабочих "
-            "дней не было. Прошу помощи до обращения в FTC: пусть AAFES рассмотрит письмо от XX/XX/XXXX, "
-            "прекратит удержания и возвратит переплату."
-        ),
-    },
-    "3178621": {
-        "name": "Расчётный или сберегательный счёт — закрытие счёта (Wells Fargo)",
-        "text": (
-            "Продукт: расчётный или сберегательный счёт. Проблема: закрытие счёта. "
-            "Подпроблема: не удаётся закрыть счёт. Компания: WELLS FARGO & COMPANY. "
-            "Штат: Северная Каролина.\n\nТекст жалобы потребителя:\n"
-            "XX/XX/XXXX получил письмо от господина XXXX XXXX из исполнительного офиса Wells Fargo "
-            "Merchant Services о том, что мой торговый счёт (окончание XXXX) закрыт. Ответ относился "
-            "к прежней жалобе в CFPB № XXXX, поданной в XX/XX/XXXX. С тех пор я получаю письма, "
-            "что счёт всё ещё открыт; последнее датировано XX/XX/XXXX."
-        ),
-    },
-    "3176560": {
-        "name": "Денежный перевод — прочая проблема с услугой (Xoom)",
-        "text": (
-            "Продукт: денежный перевод, виртуальная валюта или денежный сервис. "
-            "Проблема: прочая проблема с услугой. Компания: XOOM CORPORATION. Штат: Иллинойс.\n\n"
-            "Текст жалобы потребителя:\n"
-            "Ранее я подал жалобу в CFPB: компания ответила, что предотвратила отправку данных "
-            "чужого клиента мне. Однако XX/XX/XXXX снова получил письмо, что их клиент получил перевод "
-            "от кого-то, и снова прислали все детали транзакции по счёту, который мне не принадлежит "
-            "(транзакция XXXX). Xoom должна немедленно удалить мой email из систем. Адрес не зарегистрирован "
-            "на XXXX XXXX XXXX — получать детали чужих переводов нельзя, это нарушение конфиденциальности. "
-            "Это уже третья такая транзакция; ранее были XXXX от XX/XX/2019 и XXXX от XX/XX/2019."
-        ),
-    },
-    "3175732": {
-        "name": "Краткосрочный займ — неверная информация в отчёте (Local Management)",
-        "text": (
-            "Продукт: краткосрочный, залоговый или персональный займ. Проблема: неверная информация "
-            "в отчёте. Подпроблема: неверный статус счёта. Компания: Local Management, LLC. "
-            "Штат: Южная Каролина.\n\nТекст жалобы потребителя:\n"
-            "XX/XX/2018 я внес первый платёж XXXX; представитель заверил, что просрочки в кредитной "
-            "истории не будет, если уложиться в XXXX дней. Платёж XXXX от XX/XX/XXXX отображён, "
-            "но статус показан как просрочка 30–60 дней. Руководство ответило через неделю; XXXX был груб "
-            "и сказал, что при своевременной оплате проблем не было. Он потребовал документы, которые я "
-            "не мог предоставить, продолжал хамить — я заявила о жалобе. Прошу убрать негативные отметки "
-            "Local Finance; готова полностью погасить займ в пятницу. Я клиент много лет и никогда "
-            "не опаздывала более чем на 30 дней. Local Finance — компания XXXX XXXX XXXX XXXX, "
-            "XXXX, SC XXXX XXXX."
-        ),
-    },
-    "2446771": {
-        "name": "Кредитная карта — просроченный счёт (Capital One)",
-        "text": (
-            "Продукт: кредитная карта. Проблема: просроченный счёт. "
-            "Компания: CAPITAL ONE FINANCIAL CORPORATION. Штат: Джорджия.\n\n"
-            "Текст жалобы потребителя:\n"
-            "Многократно оспаривала счёт Capital One; по сей день они сообщают о нём дольше 7 лет "
-            "с даты первой просрочки. По телефону сказали, что будут сообщать о нём 10 лет. "
-            "Бюро кредитных историй указывают на 7 лет. Запрашивала историю платежей — не предоставили. "
-            "Счёт открыт в XXXX, просрочки с XXXX XXXX (данные от коллекторского отдела). "
-            "Прошу удалить запись из Experian по правилам FCRA: в большинстве случаев негативная "
-            "информация старше семи лет не должна сообщаться."
-        ),
-    },
-    "2447675": {
-        "name": "Банковский счёт — открытие, закрытие и управление (U.S. Bank)",
-        "text": (
-            "Продукт: банковский счёт или услуга. Проблема: открытие, закрытие или управление счётом. "
-            "Компания: U.S. BANCORP. Штат: Иллинойс.\n\nТекст жалобы потребителя:\n"
-            "Депозитные счета (CD и money market) открыты одним владельцем — XXXX XXXX; XXXX XXXX закрыт. "
-            "Счета перешли к XXXX XXXX, затем в U.S. Bank. За это время к счёту без моего ведома "
-            "и согласия добавили второе имя. U.S. Bank отказывается исправить ошибку и предоставить "
-            "карточки с подписями. Более шести месяцев пытаемся добиться ответа: обращались в executive "
-            "office, в отдел мошенничества, к senior banker (XXXX XXXX XXXX). Одна сотрудница направила "
-            "в филиал XXXX XXXX к менеджеру XXXX — я там никогда не обслуживался. Звонки и сообщения "
-            "без ответа. Помощник менеджера филиала взяла мои данные, обещала перезвонить — не перезвонила. "
-            "Ссылалась на «корпоративный офис» и письмо — ответа не было. С каждым звонком становилась "
-            "враждебнее и заявила, что не обязана ничего сообщать письменно. В другом филиале менеджер "
-            "обещала связаться на следующей неделе — не связалась; потом через сотрудника сообщили, "
-            "что информации нет. Везде указывала на юридическую проблему: я НИКОГДА не уполномочивала "
-            "другого человека на мои счета. Банк не признаёт ошибку, но разгласил неверные сведения, "
-            "из-за чего возник судебный спор (XXXX)."
-        ),
-    },
+LABEL_TO_STARS = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5}
+
+CATEGORY_KEYWORDS = {
+    "Рестораны и еда": [
+        "food", "restaurant", "menu", "dish", "pizza", "burger", "sushi",
+        "breakfast", "lunch", "dinner", "tasty", "delicious", "flavor",
+        "chef", "waiter", "waitress", "appetizer", "dessert", "meal",
+    ],
+    "Кафе и напитки": [
+        "coffee", "latte", "espresso", "cafe", "barista", "tea", "bakery",
+        "pastry", "croissant", "brunch", "smoothie",
+    ],
+    "Бары и ночная жизнь": [
+        "bar", "beer", "cocktail", "drinks", "pub", "wine", "happy hour",
+        "bartender", "nightlife", "lounge",
+    ],
+    "Салоны и услуги красоты": [
+        "salon", "haircut", "nails", "manicure", "spa", "massage",
+        "stylist", "barber", "facial",
+    ],
+    "Авто и сервис": [
+        "car", "tire", "mechanic", "oil change", "repair", "auto",
+        "dealership", "vehicle", "brakes",
+    ],
+    "Отели и путешествия": [
+        "hotel", "room", "stay", "resort", "check-in", "lobby", "suite",
+        "motel", "front desk", "booking",
+    ],
+    "Магазины и шопинг": [
+        "store", "shop", "purchase", "price", "shopping", "retail",
+        "boutique", "mall", "cashier", "refund",
+    ],
+    "Здоровье и медицина": [
+        "doctor", "dentist", "clinic", "appointment", "nurse", "medical",
+        "hospital", "pharmacy", "patient",
+    ],
 }
 
 
-def pick_rows() -> dict[str, dict]:
-    """Выбрать по одной жалобе на каждый целевой продукт."""
-    picked: dict[str, dict] = {}
+def guess_category(text: str) -> str:
+    low = text.lower()
+    best_cat = "Прочие услуги"
+    best_hits = 0
+    for cat, words in CATEGORY_KEYWORDS.items():
+        hits = sum(1 for w in words if w in low)
+        if hits > best_hits:
+            best_hits = hits
+            best_cat = cat
+    return best_cat
 
-    with ROWS_CSV.open(encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            product = row["Product"]
-            if product not in TARGET_PRODUCTS or product in picked:
-                continue
-            nar = (row.get("Consumer complaint narrative") or "").strip()
-            if len(nar) < MIN_NARRATIVE_LEN:
-                continue
-            picked[product] = row
-            if len(picked) == len(TARGET_PRODUCTS):
-                break
 
-    return picked
+def make_title(stars: int, category: str, text: str) -> str:
+    preview = " ".join(text.split())[:60].strip()
+    return f"{stars}/5 · {category} · {preview}…"
+
+
+def to_record(idx: int, stars: int, text: str) -> dict:
+    text = " ".join(text.split()).strip()
+    category = guess_category(text)
+    name = make_title(stars, category, text)
+    body = f"Рейтинг: {stars}/5 звёзд. Категория: {category}.\n\n{text}"
+    return {"id": idx, "name": name, "text": body}
+
+
+def build_from_huggingface(limit: int, seed: int) -> list[dict]:
+    from datasets import load_dataset
+
+    print(f"Загрузка Yelp/yelp_review_full с Hugging Face (limit={limit})…")
+    ds = load_dataset("Yelp/yelp_review_full", split="train")
+    ds = ds.shuffle(seed=seed).select(range(min(limit, len(ds))))
+
+    records = []
+    for i, row in enumerate(ds):
+        stars = LABEL_TO_STARS.get(int(row["label"]), int(row["label"]) + 1)
+        records.append(to_record(i, stars, row["text"]))
+    return records
+
+
+_VENUES = {
+    "Рестораны и еда": [
+        ("the pasta and the wood-fired pizza", "the kitchen was painfully slow"),
+        ("a perfectly cooked steak and attentive waiter", "the steak arrived cold and overcooked"),
+        ("fresh sushi and a generous portion size", "the fish tasted off and the rice was dry"),
+        ("the burger was juicy and the fries crisp", "they got my order wrong twice"),
+        ("an outstanding tasting menu with real flavor", "tiny portions for an outrageous price"),
+    ],
+    "Кафе и напитки": [
+        ("a smooth latte and a flaky croissant", "the espresso was burnt and bitter"),
+        ("friendly baristas and great brunch", "they ran out of oat milk and the pastry was stale"),
+        ("the cold brew here is the best in town", "I waited twenty minutes for a simple drip coffee"),
+    ],
+    "Бары и ночная жизнь": [
+        ("creative cocktails and a fun happy hour", "the bartender ignored us for half an hour"),
+        ("a great craft beer selection", "watered-down drinks and sticky tables"),
+        ("a cozy lounge with good wine", "the music was so loud we couldn't talk"),
+    ],
+    "Салоны и услуги красоты": [
+        ("a fantastic haircut and a relaxing massage", "my stylist rushed and botched the color"),
+        ("the manicure lasted for weeks", "the salon was dirty and the facial irritated my skin"),
+    ],
+    "Авто и сервис": [
+        ("a fast oil change and an honest mechanic", "they quoted me double and scratched my car"),
+        ("they fixed my brakes the same day", "the repair failed within a week"),
+    ],
+    "Отели и путешествия": [
+        ("a spotless room and a helpful front desk", "the room smelled of smoke and check-in took ages"),
+        ("a beautiful suite with a great view", "the booking was lost and the lobby was chaotic"),
+    ],
+    "Магазины и шопинг": [
+        ("helpful staff and fair prices", "the cashier was rude and refused my refund"),
+        ("a well-stocked boutique with great deals", "everything was overpriced and picked over"),
+    ],
+    "Здоровье и медицина": [
+        ("a caring dentist and a short wait", "the clinic lost my appointment and the nurse was dismissive"),
+        ("the doctor took time to explain everything", "I waited two hours past my appointment time"),
+    ],
+}
+
+_POSITIVE_OPENERS = [
+    "Absolutely loved this place.", "What a pleasant surprise.",
+    "I keep coming back here.", "Hands down one of my favorites.",
+    "Exceeded my expectations.",
+]
+_NEGATIVE_OPENERS = [
+    "Deeply disappointing experience.", "I won't be returning.",
+    "Save your money and go elsewhere.", "Such a letdown.",
+    "Worst experience I've had in a while.",
+]
+_NEUTRAL_OPENERS = [
+    "It was fine, nothing special.", "Mixed feelings about this one.",
+    "Decent but not memorable.", "An okay visit overall.",
+]
+_POSITIVE_CLOSERS = [
+    "Highly recommend it to anyone in the area.",
+    "I'll definitely be back soon.",
+    "Five stars without hesitation.",
+    "Worth every penny.",
+]
+_NEGATIVE_CLOSERS = [
+    "Management should be ashamed.",
+    "Do yourself a favor and avoid it.",
+    "I've asked for a refund.",
+    "Never again.",
+]
+_NEUTRAL_CLOSERS = [
+    "Might give it another chance someday.",
+    "Your mileage may vary.",
+    "Take that for what it's worth.",
+]
+
+
+def build_synthetic(limit: int, seed: int) -> list[dict]:
+    print(f"Генерация синтетического корпуса отзывов (limit={limit})…")
+    rng = random.Random(seed)
+    categories = list(_VENUES.keys())
+    records = []
+
+    for i in range(limit):
+        category = rng.choice(categories)
+        positive_phrase, negative_phrase = rng.choice(_VENUES[category])
+        stars = rng.choices([1, 2, 3, 4, 5], weights=[2, 2, 2, 3, 4])[0]
+
+        if stars >= 4:
+            opener = rng.choice(_POSITIVE_OPENERS)
+            closer = rng.choice(_POSITIVE_CLOSERS)
+            middle = f"I really enjoyed {positive_phrase}."
+        elif stars <= 2:
+            opener = rng.choice(_NEGATIVE_OPENERS)
+            closer = rng.choice(_NEGATIVE_CLOSERS)
+            middle = f"Unfortunately, {negative_phrase}."
+        else:
+            opener = rng.choice(_NEUTRAL_OPENERS)
+            closer = rng.choice(_NEUTRAL_CLOSERS)
+            middle = (
+                f"On one hand I enjoyed {positive_phrase}, "
+                f"but on the other hand {negative_phrase}."
+            )
+
+        filler = ""
+        if rng.random() < 0.3:
+            filler = (
+                " The service overall set the tone for the whole visit, "
+                "and the atmosphere played a big part in how I felt by the end. "
+                "I came in with certain expectations and left thinking carefully "
+                "about whether I would tell my friends to try it for themselves."
+            )
+
+        text = f"{opener} {middle}{filler} {closer}"
+        records.append(to_record(i, stars, text))
+
+    return records
+
+
+def write_datasets(records: list[dict], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"datasets": records}
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def main() -> None:
-    picked = pick_rows()
-    datasets = []
-
-    for row in picked.values():
-        complaint_id = row["Complaint ID"]
-        if complaint_id not in TRANSLATIONS:
-            raise KeyError(f"Нет перевода для Complaint ID {complaint_id}")
-        entry = TRANSLATIONS[complaint_id]
-        datasets.append({"name": entry["name"], "text": entry["text"]})
-
-    for i, item in enumerate(datasets):
-        item["id"] = i
-
-    OUT_JSON.write_text(
-        json.dumps({"datasets": datasets}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    parser = argparse.ArgumentParser(description="Подготовка datasets.json из отзывов Yelp")
+    parser.add_argument("--limit", type=int, default=5000, help="Сколько отзывов взять")
+    parser.add_argument("--seed", type=int, default=42, help="Seed для воспроизводимости")
+    parser.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="Сгенерировать синтетический корпус вместо загрузки с Hugging Face",
     )
-    print(f"Wrote {len(datasets)} datasets to {OUT_JSON}")
+    args = parser.parse_args()
+
+    if args.synthetic:
+        records = build_synthetic(args.limit, args.seed)
+    else:
+        try:
+            records = build_from_huggingface(args.limit, args.seed)
+        except Exception as exc:
+            print(f"[!] Не удалось загрузить с Hugging Face: {exc}")
+            print("[!] Переключаюсь на синтетический корпус (--synthetic).")
+            records = build_synthetic(args.limit, args.seed)
+
+    write_datasets(records, RAW_DATASETS)
+    print(f"Записано {len(records)} записей -> {RAW_DATASETS}")
 
 
 if __name__ == "__main__":

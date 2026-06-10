@@ -1,4 +1,8 @@
-"""Проверка retrieval (итерация 5) — понятный вывод."""
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 from app.retriever import Retriever
 
@@ -6,18 +10,23 @@ from app.retriever import Retriever
 def print_hit(i: int, hit: dict) -> None:
     preview = hit["text"][:120].replace("\n", " ")
     print(f"  [{i}] doc_id={hit['doc_id']}, score={hit['score']:.4f}")
-    print(f"      {preview}...")
+    print(f"      {preview}…")
 
 
 def main() -> None:
     print("=== Проверка Retriever (итерация 5) ===\n")
 
     r = Retriever()
-    print("OK: индекс загружен (vectorizer.pkl + matrix.npz + chunks.jsonl)\n")
+    print(f"OK: индекс загружен, активный бэкенд = {r.backend_name}")
+    print(f"Чанков в индексе: {len(r.chunks)}\n")
 
     queries = [
-        ("ипотека ставка", "слова есть в данных -> score > 0, doc_id=2 (Citibank)"),
-        ("безработица переменные", "слов нет в данных -> score=0, но top-k все равно возвращается"),
+        ("rude bartender ignored us at the bar",
+         "слова есть в данных -> score > 0, категория «Бары»"),
+        ("delicious pizza and friendly waiter",
+         "слова есть в данных -> score > 0, категория «Рестораны»"),
+        ("how to configure a wifi router at home",
+         "слов нет в отзывах -> низкий score / отказ на стороне генератора"),
     ]
 
     for query, hint in queries:
@@ -30,7 +39,8 @@ def main() -> None:
         print()
 
     print("=== Итог ===")
-    print("Если видите 3 результата с полями doc_id / score / text — итерация 5 работает.")
+    print("Если для каждого запроса видно 3 результата с полями "
+          "doc_id / score / text — итерация 5 работает.")
 
 
 if __name__ == "__main__":

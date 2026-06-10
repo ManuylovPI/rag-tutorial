@@ -1,17 +1,14 @@
-"""Demo-ответ: top-k чанки -> текст + источники (без внешней LLM)."""
-
 from app.config import TOP_K
-from app.prompts import MIN_SCORE, REFUSAL_EMPTY_QUESTION, REFUSAL_NO_CONTEXT
+from app.prompts import REFUSAL_EMPTY_QUESTION, REFUSAL_NO_CONTEXT, min_score_for
 from app.retriever import Retriever
 
 
-def build_answer(hits: list[dict]) -> str:
-    """Формирует ответ только из чанков с score > 0."""
-    relevant = [h for h in hits if h["score"] >= MIN_SCORE]
+def build_answer(hits: list[dict], min_score: float) -> str:
+    relevant = [h for h in hits if h["score"] >= min_score]
     if not relevant:
         return REFUSAL_NO_CONTEXT
 
-    parts = ["На основании найденных фрагментов:"]
+    parts = ["На основании найденных отзывов:"]
     for i, hit in enumerate(relevant, 1):
         parts.append(f"\n[{i}] {hit['name']}")
         parts.append(f"doc_id={hit['doc_id']}, score={hit['score']:.2f}")
@@ -36,13 +33,13 @@ def ask(
     k: int = TOP_K,
     retriever: Retriever | None = None,
 ) -> dict:
-    """Вопрос -> ответ и список источников."""
     if not question.strip():
         return {"answer": REFUSAL_EMPTY_QUESTION, "sources": []}
 
     r = retriever or Retriever()
     hits = r.search(question.strip(), k=k)
+    min_score = min_score_for(r.backend_name)
     return {
-        "answer": build_answer(hits),
+        "answer": build_answer(hits, min_score),
         "sources": format_sources(hits),
     }

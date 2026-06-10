@@ -1,18 +1,14 @@
-"""Chunking: documents.jsonl → chunks.jsonl."""
-
 import json
 from pathlib import Path
 
-from app.config import CHUNK_MAX_CHARS, CHUNK_OVERLAP, DOCUMENTS_JSONL, CHUNKS_JSONL
+from app.config import CHUNK_MAX_CHARS, CHUNK_OVERLAP, CHUNKS_JSONL, DOCUMENTS_JSONL
 
 
 def split_paragraphs(text: str) -> list[str]:
-    """Разбивает текст на непустые абзацы."""
     return [p.strip() for p in text.split("\n\n") if p.strip()]
 
 
 def split_long_text(text: str, max_chars: int) -> list[str]:
-    """Длинный абзац без переносов — жёсткая нарезка; overlap добавляется позже."""
     if len(text) <= max_chars:
         return [text]
     parts: list[str] = []
@@ -25,7 +21,6 @@ def split_long_text(text: str, max_chars: int) -> list[str]:
 
 
 def apply_overlap(chunks: list[str], overlap: int, max_chars: int) -> list[str]:
-    """Добавляет overlap из предыдущего чанка в начало следующего."""
     if overlap <= 0 or len(chunks) <= 1:
         return chunks
     result = [chunks[0]]
@@ -43,7 +38,6 @@ def chunk_text(
     max_chars: int = CHUNK_MAX_CHARS,
     overlap: int = CHUNK_OVERLAP,
 ) -> list[str]:
-    """Нарезка по абзацам с ограничением длины и overlap между чанками."""
     if not text.strip():
         return []
 
@@ -73,7 +67,6 @@ def chunk_text(
 
 
 def chunk_document(doc: dict) -> list[dict]:
-    """Один документ → список чанков с метаданными."""
     chunks = []
     for i, text in enumerate(chunk_text(doc["text"])):
         chunks.append(

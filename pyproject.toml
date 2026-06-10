@@ -1,11 +1,15 @@
 [project]
-name = "rag-tutorial"
+name = "yelp-rag"
 version = "0.1.0"
-description = "Учебный RAG на описаниях экономических датасетов Kaggle"
+description = "Учебный RAG по отзывам Yelp: TF-IDF + semantic (sentence-transformers) с источниками"
 requires-python = ">=3.10"
 dependencies = [
     "streamlit",
     "scikit-learn",
+    "numpy",
+    "scipy",
+    "datasets",
+    "sentence-transformers",
     "pytest",
 ]
 

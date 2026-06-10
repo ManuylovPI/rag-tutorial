@@ -1,4 +1,4 @@
-"""Тесты retrieval и demo-ответа."""
+"""Тесты retrieval и demo-ответа на изолированном мини-индексе (TF-IDF)."""
 
 import json
 import pickle
@@ -16,19 +16,25 @@ from app.retriever import Retriever
 
 @pytest.fixture
 def mini_index(tmp_path: Path) -> dict[str, Path]:
-    """Мини-индекс из двух чанков для изолированных тестов."""
+    """Мини-индекс из трёх отзывов для изолированных тестов retrieval."""
     chunks = [
         {
-            "chunk_id": "2_0",
-            "doc_id": "2",
-            "name": "Ипотека — закрытие ипотечной сделки (Citibank)",
-            "text": "Продукт: ипотека. Проблема: закрытие ипотечной сделки. Citibank ставка.",
+            "chunk_id": "0_0",
+            "doc_id": "0",
+            "name": "1/5 · Бары и ночная жизнь · грубый бармен",
+            "text": "Категория: Бары и ночная жизнь. The bartender was rude and ignored us.",
         },
         {
             "chunk_id": "1_0",
             "doc_id": "1",
-            "name": "Студенческий кредит",
-            "text": "Продукт: студенческий кредит. Трудности с погашением займа.",
+            "name": "5/5 · Авто и сервис · честный механик",
+            "text": "Категория: Авто и сервис. Fast oil change and an honest mechanic.",
+        },
+        {
+            "chunk_id": "2_0",
+            "doc_id": "2",
+            "name": "5/5 · Рестораны и еда · вкусная паста",
+            "text": "Категория: Рестораны и еда. Delicious pasta and a great waiter.",
         },
     ]
     chunks_path = tmp_path / "chunks.jsonl"
@@ -37,7 +43,7 @@ def mini_index(tmp_path: Path) -> dict[str, Path]:
             f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
 
     texts = [c["text"] for c in chunks]
-    vectorizer = TfidfVectorizer()
+    vectorizer = TfidfVectorizer(stop_words="english")
     matrix = vectorizer.fit_transform(texts)
 
     vectorizer_path = tmp_path / "vectorizer.pkl"
@@ -47,21 +53,21 @@ def mini_index(tmp_path: Path) -> dict[str, Path]:
     scipy.sparse.save_npz(matrix_path, matrix)
 
     return {
+        "chunks_path": chunks_path,
         "vectorizer_path": vectorizer_path,
         "matrix_path": matrix_path,
-        "chunks_path": chunks_path,
     }
 
 
 def test_search_returns_k_results(mini_index):
     r = Retriever(**mini_index)
-    results = r.search("ипотека Citibank", k=2)
-    assert len(results) == 2
+    results = r.search("bartender rude", k=3)
+    assert len(results) == 3
 
 
-def test_search_results_have_doc_id_and_score(mini_index):
+def test_search_results_have_required_fields(mini_index):
     r = Retriever(**mini_index)
-    results = r.search("ипотека", k=TOP_K)
+    results = r.search("mechanic oil change", k=TOP_K)
     assert results
     for hit in results:
         assert "doc_id" in hit
@@ -71,10 +77,10 @@ def test_search_results_have_doc_id_and_score(mini_index):
         assert isinstance(hit["score"], float)
 
 
-def test_search_ipoteka_prefers_mortgage_doc(mini_index):
+def test_search_prefers_matching_category(mini_index):
     r = Retriever(**mini_index)
-    results = r.search("ипотека Citibank ставка", k=1)
-    assert results[0]["doc_id"] == "2"
+    results = r.search("honest mechanic fast oil change", k=1)
+    assert results[0]["doc_id"] == "1"
     assert results[0]["score"] > 0
 
 
@@ -85,12 +91,15 @@ def test_search_empty_query_returns_empty(mini_index):
 
 
 def test_ask_sources_contain_doc_id(mini_index):
-    result = ask("ипотека Citibank", retriever=Retriever(**mini_index))
+    result = ask("bartender rude ignored", retriever=Retriever(**mini_index))
     assert result["sources"]
     assert all("doc_id" in src for src in result["sources"])
-    assert result["sources"][0]["doc_id"] == "2"
+    assert result["sources"][0]["doc_id"] == "0"
 
 
 def test_ask_refuses_without_relevant_context(mini_index):
-    result = ask("Как приготовить борщ?", retriever=Retriever(**mini_index))
+    result = ask(
+        "quantum entanglement orbital mechanics rocket",
+        retriever=Retriever(**mini_index),
+    )
     assert result["answer"] == REFUSAL_NO_CONTEXT

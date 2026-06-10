@@ -1,32 +1,20 @@
-# Окружение
-.venv/
 
-# Python
 __pycache__/
 *.py[cod]
-*.pyo
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 *.egg-info/
-dist/
-build/
+.pytest_cache/
+.venv/
+venv/
 
-# Сырые данные (скачиваются с Kaggle локально)
-data/raw/rows.csv
-data/raw/archive.zip
+.uv/
 
-# Артефакты pipeline (генерируются скриптами)
+data/processed/
 data/index/
-data/processed/*.jsonl
 
-# Секреты
-.env
-.env.*
 
-# IDE и ОС
+data/raw/datasets.json
+
+
+.DS_Store
 .idea/
 .vscode/
-*.swp
-.DS_Store
-Thumbs.db

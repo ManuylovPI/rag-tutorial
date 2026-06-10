@@ -1,5 +1,3 @@
-"""Ingestion: datasets.json → documents.jsonl."""
-
 import json
 import re
 import sys
@@ -12,7 +10,6 @@ from app.config import DOCUMENTS_JSONL, RAW_DATASETS
 
 
 def clean_text(text: str) -> str:
-    """Нормализация пробелов и переносов строк."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
     text = "\n".join(lines)
@@ -42,7 +39,10 @@ def write_documents(documents: list[dict], path: Path) -> None:
 
 def run(input_path: Path = RAW_DATASETS, output_path: Path = DOCUMENTS_JSONL) -> int:
     if not input_path.exists():
-        raise FileNotFoundError(f"Не найден файл: {input_path}")
+        raise FileNotFoundError(
+            f"Не найден файл: {input_path}. "
+            f"Сначала выполните: uv run python scripts/prepare_datasets.py"
+        )
 
     source_file = str(input_path.relative_to(ROOT))
     datasets = load_datasets(input_path)
